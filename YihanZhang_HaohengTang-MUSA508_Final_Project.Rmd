@@ -791,9 +791,6 @@ mall<- mall$osm_points %>%
   dplyr::select(geometry) %>% 
   mutate(Legend = "mall")
 
-# amsterdam attractions
-# website: http://tour-pedia.org/about/datasets.html
-
 
 attraction <- st_as_sf(attraction,coords = c('lng','lat'),crs = 4326) %>% 
   st_transform('ESRI:102013')
@@ -1757,6 +1754,8 @@ ams.test.revenue.table%>%
 High MAPE of prediction exists at the outskirt of Amsterdam. Far away from the city center, those listing at the outskirt are seldom occupied by renter, since population density is usually lower at the outskirt. The following analysis also proves our speculation, indicating that the listings with high MAPEs are mainly vacant throughout the year and thus have little revenue.
 
 ```{r plot occupancy by buurt, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+revenue_panel <- merge(revenue_panel, listing.sf.neighbor2[c("id", "Buurt")], by = "id")
+
 revenue_panel%>%
   group_by(Buurt) %>%
   summarize(occupancy = mean(monthly_occupancy, na.rm = T)) %>%
@@ -1888,7 +1887,7 @@ ggplot(annualrev_predict_test %>%
 
 - plot error by neighborhood2
 ```{r  annual revenue regression plot by Buurt, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
-ams.test.table.anual%>%
+annualrev_predict_test%>%
   filter(APE<1.5)%>%
   group_by(Buurt) %>%
   summarize(mean.APE = mean(APE, na.rm = T)) %>%
