@@ -1,0 +1,2109 @@
+---
+title: "MUSA 508 Final Project- Forecast Airbnb Prices in Amsterdam"
+author: 'Yihan Zhang & Haoheng Tang'
+date: "2020/12/15"
+output: 
+  html_document:
+    theme: lumen
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE, message = FALSE,warning = FALSE, echo = FALSE}
+knitr::opts_chunk$set(echo = TRUE, quiet = TRUE, warning=FALSE)
+```
+
+
+**Fairsterdam**
+Please click [here](https://youtu.be/ujihilvDLc0) to watch our introductory video about our product Fairsterdam.
+
+
+## 1. Introduction
+
+### 1.1 What's the use case?
+
+Amsterdam is one of the earliest and largest market for Airbnb. Though the tourism industry and short-term/holiday rental helped Amsterdam to renovate and revitalize the historical district, the unregulated expansion brought serious problems to the local communities. By pushing out local businesses, driving up rental prices for short-term and long-term rental prices, bringing too much strangers and impolite tourists into residential neighborhoods, Airbnb is influencing the city and especially the communities in a negative way. With rising concerns Airbnb, the current public health condistion is seen by some cities as the opportunity to make a turning point for the Airbnb expansion.
+
+We are developing an exploratory machine learning model to predict the annual revenue of a new Airbnb listing. The dependent variable Annual revenues are calculated by aggregating the price and occupant time for the whole year.
+
+Our grander goal is to develop a integrated system which not only provide information about the predicted tax revenue, but also feedback and opinions about the new listing from community members. Our prediction about tax revenue and monthly occupancy will be sent to the community members to inform them about the activities and amenities that can be supported by the economic gains. Being fully informed about the pros and cons, they will report their opinions back to the government. Ideally, their opinions will be taken into consideration in the decision making process. But since we don't have actual survey data from the community, this report will only focus on the algorithm of annual revenue prediction.
+
+### 1.2 Why would someone replicate this?
+
+This report is constituted of two parts: the first part is an exploratory analysis of the features that influence Airbnb revenue, which is directly related to price and occupancy; the second part is a machine learning model based on the correlated features to predict the annual revenue, this model is tested and validated in different ways.
+
+As Airbnb is a large business that affects cities globally, this research method and algorithm can be used to explore Airbnb in other cities and regions. Heavily relying on tourism, Airbnb in different cities have a lot in common. But as they are also contextualized in local culture, regulations, spatial and business traditions, the analysis will need to be adapted to fit in.
+
+### 1.3 Why this approach?
+
+In the real estate market, to price a new lease and predict about the vacancy rate, the operator or the consultant searches for comparable properties, which are generally locating near the new project, have similar features and target markets. But usually this market analysis is limited to a small data set. Also, to weigh different features about the comparability, the use common parameters for different properties. This parameter are often set in a range and the exact value was chosen subjectively. Since we have a large data set, we can be more precise about the coefficients thus the prediction.
+
+Our model is still based on the hedonic model, but more features are included through data exploration. In the published Airbnb prediction researches online, most of them only predicted price and included limited features. (Click [here](https://towardsdatascience.com/predicting-airbnb-prices-with-machine-learning-and-deep-learning-f46d44afb8a6) to see an example) Since we are predicting revenue, which is the actual benefit, our model took price and occupancy into consideration. Though our prediction has larger errors than predictions on price alone (since occupancy is more volatile and has fewer connections with physical features), we believe it is still valuable. Also, we are including more independent variables. Apart from basic features, we include 1) public amenities and tourist attractions, 2) the spatial lag of price, calculating the average revenue of the nearest five listings, 3)complementary features extracted from names and descriptions.
+
+Our model is far from perfect, but as a public algorithm based on public data set, we believe it will help the public to understand more about the benefits and costs of Airbnb.
+
+### 1.4 Used data
+
+To predict the annual revenue, our model will be based on three aspects listed below. The hedonic model features the internal and external features about the apartments' physical condition and spatial relationship with amenities and POIs; the time factor accounts for the seasonality of tourism; text are used to see how hosts are advertising their properties, and what descriptions might be adding value.
+
+-   **The Hedonic Model**
+
+**Physical Characteristics:** basic features such as room number, room type, amenities\
+**Spatial Processing:** Neighborhood Effect, Spatial Lag \
+**Spatial Features:** Distance to transit, supermarkets, tourists' attractions, city center
+
+-   **Time Factor**
+
+**Seasonality:** monthly differences of price and occupancy
+
+-   **Text**
+
+**Names:** Key features advertised\
+**Descriptions:** Features not formally listed that are adding value to the listing
+
+Our data source include:
+
+1.  [Airbnb Data of Amsterdam](https://www.kaggle.com/erikbruin/airbnb-amsterdam?select=listings.csv)\
+    This data set provide information about Airbnb listings, including price, physical features of the apartment, and location. It also have a calender dataframe, which includes to date data about the price and occupant status.
+
+2.   [Amsterdam Open Data (Maps)](https://maps.amsterdam.nl/open_geodata/?LANG=en)\
+    This is the open data provided by Amsterdam government, features such as boundaries of neighborhood, UNESCO zone and public amenities.
+
+3.  [OpenStreetMap](https://wiki.openstreetmap.org/wiki/Map_features) Data downloaded with package "osmdata"\
+    We use point data from OpenStreetMap about convenient stores, shopping malls, supermarkets and other amenity data that tourists care about.
+
+4.  [Tourists Attractions and POIs](http://tour-pedia.org/about/datasets.html) \
+    This is a public data set provided by Tourpedia. We used data of POIs and tourist attractions in Amsterdam.
+    
+
+Since the data size is quite large, we suggest you to download all the data in advance. All the data can be downloaded [HERE](https://drive.google.com/drive/folders/1oF6-yoHi4Zl0YYC-swqRCh4oBlFpLxQn?usp=sharing). 
+
+
+## 2. Setup
+
+### 2.1 Load R packages
+
+```{r Load R packages, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(sf)
+library(RSocrata)
+library(viridis)
+library(spatstat)
+library(ggplot2)
+library(raster)
+library(spdep)
+library(FNN)
+library(mapview)
+library(grid)
+library(gridExtra)
+library(knitr)
+library(stringr)
+library(kableExtra)
+library(tidycensus)
+library(lubridate)
+library(viridis)
+library(stargazer)
+
+
+library(scales)
+library(RColorBrewer)
+library(gridExtra)
+library(ggthemes)
+library(readr)
+library(ggcorrplot)
+library(caret)
+
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+library(osmdata)
+
+#text mining
+library(tm)
+library(wordcloud2)
+library(SnowballC)
+options(scipen=999)
+```
+
+### 2.2 Standardize the formatting
+
+```{r formatting, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+palette5 <- c("#E46B45","#BD665C","#966174","#6E5C8B","#4757A2")
+palette4 <- c("#E46B45","#BD665C","#6E5C8B","#4757A2")
+palette2 <- c("#e46b45","#4757a2")
+
+qBr <- function(df, variable, rnd) {
+  if (missing(rnd)) {
+    as.character(quantile(round(df[[variable]],0),
+                          c(.01,.2,.4,.6,.8), na.rm=T))
+  } else if (rnd == FALSE | rnd == F) {
+    as.character(formatC(quantile(df[[variable]]), digits = 3),
+                 c(.01,.2,.4,.6,.8), na.rm=T)
+  }
+}
+
+qBr2 <- function(df, variable, rnd) {
+  if (missing(rnd)) {
+    as.character(round(quantile(round(df[[variable]],0),
+                          c(.01,.2,.4,.6,.8), na.rm=T)))
+  } else if (rnd == FALSE | rnd == F) {
+    as.character(round(formatC(quantile(round(df[[variable]]), 0)),
+                 c(.01,.2,.4,.6,.8), na.rm=T))
+  }
+}
+
+q5 <- function(variable) {as.factor(ntile(variable, 5))}
+
+plotTheme <- function(base_size = 12) {
+  theme(
+    text = element_text( color = "black"),
+    plot.title = element_text(size = 14,colour = "black"),
+    plot.subtitle = element_text(face="italic"),
+    plot.caption = element_text(hjust=0),
+    axis.ticks = element_blank(),
+    panel.background = element_blank(),
+    panel.grid.major = element_line("grey80", size = 0.1),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "black", fill=NA, size=2),
+    strip.background = element_rect(fill = "grey80", color = "white"),
+    strip.text = element_text(size=12),
+    axis.title = element_text(size=12),
+    axis.text = element_text(size=10),
+    plot.background = element_blank(),
+    legend.background = element_blank(),
+    legend.title = element_text(colour = "black", face = "italic"),
+    legend.text = element_text(colour = "black", face = "italic"),
+    strip.text.x = element_text(size = 14)
+  )
+}
+
+mapTheme <- theme(plot.title =element_text(size=12),
+                  plot.subtitle = element_text(size=8),
+                  plot.caption = element_text(size = 8),
+                  axis.line=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.text.y=element_blank(),
+                  axis.ticks=element_blank(),
+                  axis.title.x=element_blank(),
+                  axis.title.y=element_blank(),
+                  panel.background=element_blank(),
+                  panel.border = element_rect(colour = "black", fill=NA, size=2),
+                  panel.grid.major=element_line(colour = 'grey92'),
+                  panel.grid.minor=element_blank(),
+                  legend.direction = "vertical", 
+                  legend.position = "right",
+                  plot.margin = margin(1, 1, 1, 1, 'cm'),
+                  legend.key.height = unit(1, "cm"), legend.key.width = unit(0.2, "cm"))
+
+```
+
+### 2.3 Function
+
+```{r function, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+nn_function <- function(measureFrom,measureTo,k) {
+  measureFrom_Matrix <- as.matrix(measureFrom)
+  measureTo_Matrix <- as.matrix(measureTo)
+  nn <-   
+    get.knnx(measureTo, measureFrom, k)$nn.dist
+  output <-
+    as.data.frame(nn) %>%
+    rownames_to_column(var = "thisPoint") %>%
+    gather(points, point_distance, V1:ncol(.)) %>%
+    arrange(as.numeric(thisPoint)) %>%
+    group_by(thisPoint) %>%
+    summarize(pointDistance = mean(point_distance)) %>%
+    arrange(as.numeric(thisPoint)) %>% 
+    dplyr::select(-thisPoint) %>%
+    pull()
+  
+  return(output)  
+}
+
+
+rquery.wordcloud <- function(x, type=c("text", "url", "file"), 
+                          lang="english", excludeWords=NULL, 
+                          textStemming=FALSE,  colorPalette="Dark2",
+                          min.freq=3, max.words=200)
+{ 
+  library("tm")
+  library("SnowballC")
+  library("wordcloud")
+  library("RColorBrewer") 
+  
+  if(type[1]=="file") text <- readLines(x)
+  else if(type[1]=="url") text <- html_to_text(x)
+  else if(type[1]=="text") text <- x
+  
+  # Load the text as a corpus
+  docs <- Corpus(VectorSource(text))
+  # Convert the text to lower case
+  docs <- tm_map(docs, content_transformer(tolower))
+  # Remove numbers
+  docs <- tm_map(docs, removeNumbers)
+  # Remove stopwords for the language 
+  docs <- tm_map(docs, removeWords, stopwords(lang))
+  # Remove punctuations
+  docs <- tm_map(docs, removePunctuation)
+  # Eliminate extra white spaces
+  docs <- tm_map(docs, stripWhitespace)
+  # Remove your own stopwords
+  if(!is.null(excludeWords)) 
+    docs <- tm_map(docs, removeWords, excludeWords) 
+  # Text stemming
+  if(textStemming) docs <- tm_map(docs, stemDocument)
+  # Create term-document matrix
+  tdm <- TermDocumentMatrix(docs)
+  m <- as.matrix(tdm)
+  v <- sort(rowSums(m),decreasing=TRUE)
+  d <- data.frame(word = names(v),freq=v)
+  # check the color palette name 
+  if(!colorPalette %in% rownames(brewer.pal.info)) colors = colorPalette
+  else colors = brewer.pal(8, colorPalette) 
+  # Plot the word cloud
+  set.seed(1234)
+  wordcloud(d$word,d$freq, min.freq=min.freq, max.words=max.words,
+            random.order=FALSE, rot.per=0.35, 
+            use.r.layout=FALSE, colors=colors)
+  
+  invisible(list(tdm=tdm, freqTable = d))
+}
+#++++++++++++++++++++++
+# Helper function
+#++++++++++++++++++++++
+# Download and parse webpage
+html_to_text<-function(url){
+  library(RCurl)
+  library(XML)
+  # download html
+  html.doc <- getURL(url)  
+  #convert to plain text
+  doc = htmlParse(html.doc, asText=TRUE)
+ # "//text()" returns all text outside of HTML tags.
+ # We also don’t want text such as style and script codes
+  text <- xpathSApply(doc, "//text()[not(ancestor::script)][not(ancestor::style)][not(ancestor::noscript)][not(ancestor::form)]", xmlValue)
+  # Format text vector into one character string
+  return(paste(text, collapse = " "))
+}
+```
+
+## 3. Data Wrangling
+
+### 3.1 Load data
+
+```{r load data, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+setwd("D:/MUSA 508/Final Project")
+#setwd("D:/Rdata/Final_Airbnb/Data")
+listings <- st_read("listings.csv")
+details <- st_read("listings_details.csv")
+calendar <- read.csv("calendar.csv")
+
+
+
+#large scale neighborhood
+neighborhood <- st_read('neighbourhoods.geojson')
+
+#small scale neighborhood (used to define community?)
+neighbor2 <- st_read('neighbor2.json') %>% 
+  st_transform(st_crs(neighborhood))
+
+developing_area <- st_read('developing_area.json') %>% 
+  st_transform(st_crs(neighborhood))
+
+crowdsensor <- st_read('crowdsensor.json') %>% 
+  st_transform(st_crs(neighborhood))
+
+metro <- st_read('tram_metro_stops.json') %>% 
+  st_transform(st_crs(neighborhood))
+
+
+buildingyear <- st_read('buildingyearblock.json') %>% 
+  st_transform(st_crs(neighborhood))
+
+zipcode6 <- st_read('zipcode6.json') %>% 
+  st_transform(st_crs(neighborhood))
+
+zipcode4 <- st_read('zipcode4.json') %>% 
+  st_transform(st_crs(neighborhood))
+```
+
+```{r  text, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+details.sf <- st_as_sf(details,coords = c('longitude','latitude'),crs = 4326) %>% 
+  st_transform(st_crs(neighborhood))
+
+details.sf$price <- parse_number(details.sf$price)
+details.sf$weekly_price <- parse_number(details.sf$weekly_price)
+details.sf$monthly_price <- parse_number(details.sf$monthly_price)
+details.sf$cleaning_fee <- parse_number(details.sf$cleaning_fee)
+details.sf$extra_people <- parse_number(details.sf$extra_people)
+details.sf$security_deposit <- parse_number(details.sf$security_deposit)
+details.sf$beds <- as.numeric(details.sf$beds)
+details.sf$minimum_nights <- as.numeric(details.sf$minimum_nights)
+details.sf$maximum_nights <- as.numeric(details.sf$maximum_nights)
+details.sf$number_of_reviews <- as.numeric(details.sf$number_of_reviews)
+details.sf$review_scores_rating <- as.numeric(details.sf$review_scores_rating)
+details.sf$review_scores_accuracy <- as.numeric(details.sf$review_scores_accuracy)
+details.sf$review_scores_cleanliness<- as.numeric(details.sf$review_scores_cleanliness)
+details.sf$review_scores_value <- as.numeric(details.sf$review_scores_value)
+details.sf$reviews_per_month <- as.numeric(details.sf$reviews_per_month)
+
+details.sf.raw <- details.sf
+```
+
+### 3.2 Deal with data
+
+#### 3.2.1 Price panel
+
+```{r price panel, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+# Available Calendar
+available_calendar <- calendar %>%
+  filter(available =="t")
+
+available_calendar$listing_id <- as.character(available_calendar$listing_id)
+
+# Price change
+available_calendar <- available_calendar%>%
+  mutate(price2 = gsub("^.","",price))%>%
+  mutate(price2 = gsub(",","",price2))
+
+available_calendar$price3 <- as.numeric(available_calendar$price2)
+
+# Sum per month
+available_calendar2 <- available_calendar%>%
+  mutate(date2 = ymd(date))%>%
+  mutate(month = month(date2))%>%
+  group_by(listing_id, month) %>%
+  summarize(month_price = mean(price3))
+```
+
+```{r panel length, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+length(unique(calendar$listing_id))
+length(unique(calendar$listing_id))*12
+```
+
+
+```{r deal with panel, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+study.panel <- 
+  expand.grid(listing_id = unique(calendar$listing_id),
+              month=unique(available_calendar2$month))
+
+study.panel$listing_id <- as.character(study.panel$listing_id)
+
+listing_panel <- study.panel %>%
+  left_join(available_calendar2) %>%
+  mutate(each_month_price = 0)
+
+o <- order(listing_panel[,"listing_id"],listing_panel[,"month"])
+listing_panel <- listing_panel[o,]
+
+xx <- 0
+
+for(i in 2:nrow(listing_panel)){
+  if(!is.na(listing_panel[i,3])){
+    xx <- listing_panel[i,3]
+    listing_panel[i,4]=listing_panel[i,3]
+  }
+  if(is.na(listing_panel[i,3])& listing_panel[i-1,1]==listing_panel[i,1]){
+    listing_panel[i,4] <- xx
+  }
+  if(is.na(listing_panel[i,3])& listing_panel[i-1,1]!=listing_panel[i,1]){
+    xx <- 0
+    listing_panel[i,4] <- xx
+  }
+}
+
+d <- order(listing_panel[,"listing_id"],-listing_panel[,"month"])
+listing_panel <- listing_panel[d,]
+
+for(i in 2:nrow(listing_panel)){
+  if(listing_panel[i,4]==0){
+    listing_panel[i,4]=listing_panel[i-1,4]
+  }
+}
+
+o <- order(listing_panel[,"listing_id"],listing_panel[,"month"])
+listing_panel <- listing_panel[o,]
+
+listing_0price <- listing_panel %>%
+  filter(each_month_price == 0)
+
+no_price <- unique(listing_0price$listing_id)
+no_price
+```
+
+
+Drop listings that have no price
+
+```{r drop NA listings, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+listing_panel <- listing_panel %>%
+  filter(!listing_id %in% no_price)
+```
+
+
+#### 3.2.2 Occupancy panel
+
+```{r occupancy panel, fig.width=8, fig.height=3.8, include = TRUE, echo=TRUE, warning=FALSE, message=FALSE}
+index <- function(x, flag = '0') {
+  digit <- floor(log10(length(x))) + 1
+  paste(flag, formatC(x, width = digit, flag = '0'), sep = '')
+}
+
+occupancy <- calendar%>%
+  mutate(date2 = ymd(date))%>%
+  mutate(month = month(date2),
+         count = ifelse(available == "f", 1, 0),
+         listing_id = as.character(listing_id))%>%
+  filter(!listing_id %in% no_price) %>%
+  group_by(listing_id, month) %>%
+  summarize(monthly_occupancy = sum(count))
+
+monthly_occupancy <- occupancy %>%
+  mutate(month = as.character(month))%>%
+  mutate(month = ifelse(month != 10 & month != 11 & month != 12, gsub("^","0",month), month)) %>%
+  group_by(month) %>%
+  summarise(mean_monthly_occupancy = mean(monthly_occupancy))
+
+ggplot(monthly_occupancy, 
+       aes(x=month, y=mean_monthly_occupancy, group =1)) +
+  geom_line(size=1, color = "#e46b45")+
+  plotTheme()
+```
+From the figure above, we see that the occupancy reaches its peak during summer, especially in July. Though occupancy in February seems much lower than others, that is probably because the number of days in February is fewer. Overall, occupancy is a bit higher during summer time and a bit lower during winter time.
+
+
+```{r price change, fig.width=8, fig.height=3.8, include = TRUE, echo=TRUE, warning= FALSE, message=FALSE}
+Month_price <- calendar%>%
+  mutate(date2 = ymd(date))%>%
+  mutate(month = month(date2),
+         listing_id = as.character(listing_id),
+         price = parse_number(price))%>%
+  mutate(month = as.character(month))%>%
+  mutate(month = ifelse(month != 10 & month != 11 & month != 12, gsub("^","0",month), month)) %>%
+  drop_na(price) %>%
+  group_by(month) %>%
+  summarize(mean_monthly_price = mean(price))
+
+
+ggplot(Month_price, 
+       aes(x=month, y=mean_monthly_price, group =1)) +
+  geom_line(size=1, color = "#e46b45")+
+  plotTheme()
+```
+From the figure above, we see that the price reaches its peak in April. The average price in February is lower than others. Overall, the fluctuation of prices throughout year shows the same trend as occupancy, which indicates that these two variables might be correlated.
+
+
+
+### 3.3 Basic Visualization
+
+**Plot the listings' prices as points on the map**
+
+```{r plot listings, fig.width=6.4, fig.height=6.0, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+details.sf <- 
+  details.sf %>% 
+  mutate(priceBed=price/beds) %>% 
+  filter(priceBed <=1000)
+
+
+ggplot()+
+  geom_sf(data = neighborhood,fill='grey90',color = 'white')+
+  geom_sf(data = details.sf, aes(colour=q5(priceBed)),size=.5)+
+  scale_color_manual(values = palette5,
+                     labels = qBr(details.sf,'priceBed'),)+
+  labs(title = "Price per bed",
+       subtitle = 'Amsterdam Airbnb, price on 2018-12-6')+
+  mapTheme
+
+```
+From the figure above, we see that the distribution of Airbnb housings cluster at the center of the city. Houses with high price also cluster at the center while those with lower price are dispersed at the outskirt.
+
+**Plot the number of airbnb by neighborhood2**
+```{r plot the number of airbnb, fig.width=6.4, fig.height=6.0, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+listings.sf<- listings %>% 
+  st_as_sf(coords = c( "longitude","latitude"), crs = 4326, agr = "constant")
+
+neighbor2 <- neighbor2 %>% 
+  st_transform(st_crs(listings.sf))
+
+listing.sf.neighbor2 <- st_intersection(listings.sf,neighbor2) %>% 
+  dplyr::select(id, Buurt,Buurt_code) %>% 
+  mutate(count=1) %>% 
+  st_drop_geometry()
+
+listings.sf <- left_join(listings.sf, listing.sf.neighbor2,by='id')
+
+neighbo2.count <- listings.sf %>% 
+  group_by(Buurt) %>% 
+  summarise(airbnb.number = sum(count)) %>% 
+  dplyr::select(Buurt, airbnb.number) %>% 
+  st_drop_geometry()
+
+neighbor2 <- left_join(neighbor2,neighbo2.count,by="Buurt")
+
+neighbor2 %>% ggplot() + 
+      geom_sf(aes(fill = airbnb.number), color = 'white') +
+      scale_fill_gradient(low = '#f3c226', high = palette5[5],
+                          name = "Airbnb Number") +
+      labs(title = "Airbnb Number by ZIP") +
+      mapTheme
+
+ggplot()+
+  geom_sf(data = neighbor2, aes(fill=q5(airbnb.number)),color='transparent')+
+  scale_fill_manual(values = palette5,
+                     labels = qBr(neighbor2,'airbnb.number'),)+
+  labs(title = "Airbnb Number by neighborhood")+
+  mapTheme
+
+
+```
+Figure above also shows that Airbnb housings cluster at the center of the city. 
+
+
+## 4. Features Engineering
+
+### 4.1 Physical Features
+
+#### 4.1.1 Basic Features
+
+Basic features such as beds, bedrooms, bathrooms are the most relevant features to price and revenue. Here is a summary of these features:
+
+```{r basic features, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+
+table.basic <- details.sf %>% 
+  st_drop_geometry() %>% 
+  dplyr::select(price ,beds, bedrooms, bathrooms, accommodates)
+
+stargazer(as.data.frame(table.basic),
+          type = "text",
+          title ="Table 1. Summary of Basic Features",
+          single.row = TRUE,
+          out.header = TRUE)
+
+```
+
+
+#### 4.1.2 Amenities
+
+Apart from common amenities, some of them are adding more value to the property. As shown in the plot below, properties with pools, fireplaces, parking and kithcens generally have higher price. Also, we counted the number of amenities listes by the host, we'll later use a correlation matrix to test if it is influencing the price. 
+
+```{r amenities, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+#pool
+details.sf <- details.sf %>%
+  mutate(pool = ifelse(str_detect(amenities, "Pool"), "Pool", "No Pool"))
+
+#Paid parking off premises
+details.sf <- details.sf %>%
+  mutate(parking = ifelse(str_detect(amenities, "Paid parking off premises"), 
+                          "Parking", "No Parking"))
+
+#Indoor fireplace
+details.sf <- details.sf %>%
+  mutate(fireplace = ifelse(str_detect(amenities, "Indoor fireplace"), 
+                          "Fireplace", "No Fireplace"))
+
+#Waterfront
+details.sf <- details.sf %>%
+  mutate(waterfront = ifelse(str_detect(amenities, "Waterfront"), 
+                          "waterfront", "No waterfront"))
+
+#Kitchen
+details.sf <- details.sf %>%
+  mutate(kitchen = ifelse(str_detect(amenities, "Kitchen"), 
+                          "kitchen", "No kitchen"))
+
+#Air conditioning
+details.sf <- details.sf %>%
+  mutate(AC = ifelse(str_detect(amenities, "Air conditioning"), 
+                          "AC", "No AC"))
+```
+
+
+```{r plot amenities,fig.width=10, fig.height=6.8, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+amenitie_vars <- c('pool','parking','fireplace','waterfront','kitchen','AC')
+plotList <- list()
+
+for (i in amenitie_vars){
+plotList[[i]] <- 
+  details.sf %>%st_drop_geometry() %>% 
+  dplyr::select(price,i) %>%
+  filter(price<500) %>% 
+  gather(Variable, value, -price) %>%
+    ggplot(aes(value, price, fill=value)) + 
+      #geom_bar(position = "dodge", stat = "summary", fun.y = "mean") + 
+      geom_boxplot()+
+      scale_fill_manual(values = palette2) +
+      labs(x="value", y="price", 
+           title = i) +
+      theme(legend.position = "none")+
+  plotTheme()
+}
+
+do.call(grid.arrange,c(plotList, ncol = 3, top = "Amenities' influence on Price"))
+```
+
+**number of amenities listed**
+
+```{r number of amenties listed, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+library(stringr)
+
+details.sf <- details.sf %>% 
+  mutate(amenities.number = str_count(amenities,",")+1)
+
+```
+
+
+### 4.2 Neighborhood Effect
+
+Sharing the same location and similar spatial pattern, there is a spatial effect on the prediction model. We used two geogaphies to account for the neighborhood effect, and test which one is of larger influence. Neighborhood boundaries are defined by Zipcode 4 and Zipcode 6, the former devides Amsterdam into 22 neighborhoods and the latter 481.
+
+```{r Neighborhood Effect, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE }
+details.sf.neighbor <- st_intersection(details.sf,zipcode4) %>% 
+  dplyr::select(id, Postcode4) %>% 
+  st_drop_geometry()
+
+details.sf <- left_join(details.sf,details.sf.neighbor,by='id')
+
+```
+
+
+```{r neighbor effect2 , include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+neighbor2 <- neighbor2 %>% 
+  st_transform(st_crs(listings.sf))
+
+listing.sf.neighbor2 <- st_intersection(listings.sf,neighbor2) %>% 
+  dplyr::select(id, Buurt,Buurt_code) %>% 
+  mutate(count=1) %>% st_drop_geometry()
+
+detail.sf <- left_join(details.sf,listing.sf.neighbor2, by = "id")
+```
+
+
+### 4.3 External Features
+
+Distance to public transportation (the metro stations), public amenities (parks, beaches, supermarkets ...) are calculated in this part. Som of them are converted from numeric to categorical features. 
+
+#### 4.3.1 Distance to metro
+
+```{r Distance to metro, fig.width=6.4, fig.height=6.0, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+listings$longitude = as.numeric(listings$longitude)
+listings$latitude = as.numeric(listings$latitude)
+listings.sf<- listings %>% 
+  st_as_sf(coords = c( "longitude","latitude"), crs = 4326, agr = "constant")
+
+st_crs(metro) <- st_crs(listings.sf)
+
+st_c <- st_coordinates
+
+details.sf.c <- st_centroid(details.sf)%>%
+  st_transform('ESRI:102013')
+metro.c <- st_centroid(metro)%>%
+  st_transform('ESRI:102013')
+
+details.sf <- details.sf%>%
+  mutate(dist.metro =nn_function(st_coordinates(details.sf.c),st_coordinates(metro.c),1))
+
+metro <- metro%>%
+  st_transform('ESRI:102013')
+listings.sf <- listings.sf%>%
+  st_transform('ESRI:102013')
+
+listings <- listings%>%
+  mutate(distance_to_metro =nn_function(st_c(listings.sf), st_c(metro),1))
+
+ggplot()+
+  geom_sf(data = neighbor2, fill = "grey32", color= "grey40")+
+  geom_point(data = listings,
+             aes(x= longitude, y = latitude, color = distance_to_metro), 
+             fill = "transparent", size = 0.86, alpha = 0.6) +
+  scale_colour_viridis(direction = -1,
+                       discrete = FALSE, 
+                       option = "plasma")+
+  geom_sf(data = metro, fill="red")+
+  ylim(min(listings$latitude), max(listings$latitude))+
+  xlim(min(listings$longitude), max(listings$longitude))+
+  labs(title="Choropleth Map - Distance to Metro",
+       caption = "Figure xxx")+
+  mapTheme
+```
+
+
+
+#### 4.3.2 Outside amenities and attractions
+
+Load data
+
+```{r outside attractions,  include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+
+# a polygon
+unesco <- 
+  st_read('UNESCO/UnescoWerelderfgoed_region.shp') %>%
+  st_transform(st_crs(neighborhood))
+
+parks <- st_read('parks.json') %>% 
+  st_transform(st_crs(neighborhood))
+
+
+attraction <- st_read('amsterdam-attraction.csv') %>% 
+  filter(lat != 'attraction')
+attraction <- st_as_sf(attraction,coords = c('lng','lat'),crs = 4326) %>% 
+  st_transform(st_crs(neighborhood))
+
+parks <- attraction %>% 
+  filter(subCategory == 'Park')
+
+museum <- attraction %>% 
+  filter(subCategory == 'Museum')
+
+
+
+```
+
+```{r outside amenities , include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+
+#supermarkets
+supermarkets <- getbb('Amsterdam') %>% 
+  opq() %>% 
+  add_osm_feature('shop','supermarket') %>% 
+  osmdata_sf() 
+supermarkets <- supermarkets$osm_points %>% 
+  dplyr::select(geometry)%>% 
+  st_transform('ESRI:102013')%>% 
+  dplyr::select(geometry) %>% 
+  mutate(Legend = "supermarkets")
+
+convenienceshop <- getbb('Amsterdam') %>% 
+  opq() %>% 
+  add_osm_feature('shop','convenience') %>% 
+  osmdata_sf() 
+convenienceshop <- convenienceshop$osm_points %>% 
+  dplyr::select(geometry)%>% 
+  st_transform('ESRI:102013')%>% 
+  dplyr::select(geometry) %>% 
+  mutate(Legend = "convenienceshop")
+
+mall <- getbb('Amsterdam') %>% 
+  opq() %>% 
+  add_osm_feature('shop','mall') %>% 
+  osmdata_sf() 
+mall<- mall$osm_points %>% 
+  dplyr::select(geometry)%>% 
+  st_transform('ESRI:102013') %>% 
+  dplyr::select(geometry) %>% 
+  mutate(Legend = "mall")
+
+# amsterdam attractions
+# website: http://tour-pedia.org/about/datasets.html
+
+
+attraction <- st_as_sf(attraction,coords = c('lng','lat'),crs = 4326) %>% 
+  st_transform('ESRI:102013')
+
+
+plaza <- attraction %>% 
+  filter(subCategory == 'Plaza') 
+
+
+beach <- attraction %>% 
+  filter(subCategory == 'Beach') 
+
+
+nightclub <- attraction %>% 
+  filter(subCategory == 'Nightclub') 
+
+```
+
+Calculate distance to amenities and attractions**
+
+```{r calculate distance to amenities & attractions , include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+details.sf <- details.sf%>%
+  mutate(dist.mall =nn_function(st_coordinates(details.sf.c),st_coordinates(mall),1))
+
+details.sf <- details.sf%>%
+  mutate(dist.supermarkets =nn_function(st_coordinates(details.sf.c),
+                                        st_coordinates(supermarkets),1))
+
+details.sf <- details.sf%>%
+  mutate(dist.convenienceshop =nn_function(st_coordinates(details.sf.c),
+                                        st_coordinates(convenienceshop),1))
+
+details.sf <- details.sf%>%
+  mutate(dist.museum =nn_function(st_coordinates(details.sf.c),
+                                        st_coordinates(museum),1))
+
+details.sf <- details.sf%>%
+  mutate(dist.plaza =nn_function(st_coordinates(details.sf.c),
+                                        st_coordinates(plaza),1))
+
+details.sf <- details.sf%>%
+  mutate(dist.nightclub =nn_function(st_coordinates(details.sf.c),
+                                        st_coordinates(nightclub),1))
+
+details.sf <- details.sf%>%
+  mutate(dist.beach =nn_function(st_coordinates(details.sf.c),
+                                        st_coordinates(beach),1))
+
+details.sf <- details.sf%>%
+  mutate(dist.parks =nn_function(st_coordinates(details.sf.c),
+                                        st_coordinates(parks),1))
+
+```
+
+This is a summary of the distance features: 
+
+```{r summary of distance features, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+
+table.distance <- details.sf %>% 
+  st_drop_geometry() %>% 
+  dplyr::select(c("dist.museum","dist.plaza","dist.nightclub","dist.beach",
+                  "dist.metro","dist.supermarkets"))
+
+stargazer(as.data.frame(table.distance),
+          type = "text",
+          title ="Table 2. Summary of all Distance Features",
+          single.row = TRUE,
+          out.header = TRUE)
+
+```
+
+
+```{r UNESCO, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+# within UNESCO buffer or not
+unesco_buffer <- st_union(unesco)
+unesco_buffer <- st_as_sf(unesco_buffer)
+
+details.sf.unesco <- st_intersection(details.sf,unesco_buffer) %>% 
+  dplyr::select(id) %>% 
+  mutate(Unesco = 'within') %>% 
+  st_drop_geometry()
+
+details.sf <- left_join(details.sf,details.sf.unesco,by='id')
+details.sf$Unesco <- tidyr::replace_na(details.sf$Unesco,'outside')
+
+```
+
+
+#### 4.3.3 Airbnb Hotspots
+
+We used two ways to calculate the Airbnb Hotspots in Amsterdam, one by counting Airbnb number in a fishnet cell; one by setting threshold with Local Moran's I. This feature partly overlapped with "ditance to center city", but might give a more nuance view on the clustering of Airbnbs. 
+
+```{r Airbnb hotspot, fig.width=6.4, fig.height=6.0, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+#create fishnet
+
+amsterdam.boundary <- st_union(neighborhood) %>% st_transform('ESRI:102013')
+
+fishnet <- 
+  st_make_grid(amsterdam.boundary, cellsize = 300) %>%
+  st_sf() %>%
+  mutate(uniqueID = rownames(.))
+
+fishnet <- fishnet %>% 
+  mutate(uniqueID = rownames(.))
+
+fishnet.count <- st_intersection(listings.sf,fishnet) %>% 
+  mutate(count = 1) %>% 
+  st_drop_geometry() %>% 
+  dplyr::select(uniqueID, count) %>% 
+  group_by(uniqueID) %>% 
+  summarise(countairbnb = sum(count))
+
+airbnb_net <- 
+  dplyr::select(listings.sf) %>% 
+  mutate(countairbnb = 1) %>% 
+  aggregate(., fishnet, sum)
+
+airbnb_net <- airbnb_net %>% 
+  mutate(countairbnb = tidyr::replace_na(countairbnb,0),
+         uniqueID = row.names(.))
+
+
+ggplot() +
+  geom_sf(data = airbnb_net, aes(fill = countairbnb), color = NA) +
+  scale_fill_viridis() +
+  labs(title = "Count of airbnb for the fishnet") +
+  mapTheme
+```
+
+
+```{r local spatial process, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+#Visualize local spatial process of airbnb
+
+final_net <- airbnb_net
+
+final_net.nb <- poly2nb(as_Spatial(airbnb_net), queen=TRUE)
+final_net.weights <- nb2listw(final_net.nb, style="W", zero.policy=TRUE)
+
+#Visualize local spatial process of auto Theft
+```
+
+```{r plot local MORANS, fig.width=13, fig.height=8.6, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+final_net.localMorans <- 
+  cbind(
+    as.data.frame(localmoran(final_net$countairbnb, final_net.weights)),
+    as.data.frame(final_net)) %>% 
+    st_sf() %>%
+      dplyr::select(airbnb_Count = countairbnb, 
+                    Local_Morans_I = Ii, 
+                    P_Value = `Pr(z > 0)`) %>%
+      mutate(Significant_Hotspots = ifelse(P_Value <= 0.0001, 1, 0)) %>%
+      gather(Variable, Value, -geometry)
+  
+vars <- unique(final_net.localMorans$Variable)
+varList <- list()
+
+for(i in vars){
+  varList[[i]] <- 
+    ggplot() +
+      geom_sf(data = filter(final_net.localMorans, Variable == i), 
+              aes(fill = Value), colour=NA) +
+      scale_fill_viridis(name="") +
+      labs(title=i) +
+      mapTheme + theme(legend.position="right")}
+
+do.call(grid.arrange,c(varList, ncol = 2, top = "Local Morans I statistics, Amsterdam Airbnb"))
+
+
+```
+
+```{r hotspots by count, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+#hotspots by count
+hotspot.count <- airbnb_net %>% 
+  filter(countairbnb>150)
+
+#hotspot by moran's I
+hotspot.moran <- final_net %>% 
+  mutate(isSig = 
+           ifelse(localmoran(final_net$countairbnb, 
+                             final_net.weights)[,5] <= 0.000001, 1, 0)) %>% 
+  filter(isSig == 1)
+
+#distance to hotspots
+details.sf <- details.sf %>% 
+  mutate(dist.hotspot.count = nn_function(st_coordinates(details.sf),
+                                          st_coordinates(st_centroid(hotspot.count)), 1),
+         dist.hotspot.moran = nn_function(st_coordinates(details.sf),
+                                          st_coordinates(st_centroid(hotspot.moran)), 1))
+
+```
+
+### 4.4 Descriptions
+
+Some features such as decoration, property area are not directly given out in the dataset. So by analysing the descriptions and names, we hope to use words like "spatious" and "luxurious" to partly represent the housing qualities. 
+
+```{r deal with descriptions,include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+details.sf$name <- as.character(details.sf$name) 
+
+
+
+# city center
+details.sf <- details.sf %>%
+  mutate(name.center = ifelse(str_detect(name, "center")|
+                              str_detect(name, "centre")|
+                              str_detect(name, "central")|
+                              str_detect(name, "jordan")|
+                              str_detect(name, "Center")|
+                              str_detect(name, "Centre")|
+                              str_detect(name, "Central")|
+                              str_detect(name, "Jordan")|
+                              str_detect(name, "CENTER")|
+                              str_detect(name, "CENTRE")|
+                              str_detect(name, "CENTRAL")|
+                              str_detect(name, "JORDAN"),
+                              "Center", "No Center")) 
+
+details.sf <- details.sf %>%
+  mutate(name.bright = ifelse(str_detect(name, "bright")|
+                              str_detect(name, "luminous")|
+                              str_detect(name, "Bright")|
+                              str_detect(name, "Luminous")|
+                                                            str_detect(name, "BRIGHT")|
+                              str_detect(name, "LUMIOUS"),
+                              "bright", "not bright")) 
+
+#spacious
+details.sf <- details.sf %>%
+  mutate(name.spacious = ifelse(str_detect(name, "spacious")|
+                                str_detect(name, "large")|
+                                str_detect(name, "Spacious")|
+                                str_detect(name, "Large")|
+                                  str_detect(name, "SPACIOUS")|
+                                str_detect(name, "LARGE"),
+                              "spacious", "not spacious")) 
+
+
+#luxurious
+details.sf <- details.sf %>%
+  mutate(name.luxury = ifelse(str_detect(name, "luxury")|
+                              str_detect(name, "luxurious")|
+                              str_detect(name, "Luxury")|
+                              str_detect(name, "Luxurious")|
+                              str_detect(name, "LUXURY")|
+                              str_detect(name, "LUXURIOUS"),
+                              "luxury", "not luxury")) 
+
+```
+
+
+### 4.5 Correlation analysis
+
+#### 4.5.1 Price
+
+**Plot monthly-prices and numeric features **
+Each line represents the correlation of numeric feature and the average price in a month. For each month, the coefficient is slightly different, but not significant. By analysing the data more closely, prices do change among differnt months, but within a relatively small range around 10 euros. 
+
+```{r scatterplot price & numeric features, fig.width=20, fig.height=13.6, include=TRUE, echo=TRUE, warning= FALSE, message= FALSE}
+listing_panel2 <- listing_panel %>%
+  dplyr::rename(id = listing_id) %>%
+  dplyr::select(-month_price) 
+  
+listing_panel2 <-  
+  left_join(listing_panel2, st_drop_geometry(details.sf), by = "id") %>%
+  dplyr::select(id, month, each_month_price, bathrooms, bedrooms, beds, review_scores_rating, reviews_per_month, dist.metro) %>%
+  gather(-id,-month, -each_month_price, key = "variable", value = "value") %>%
+  mutate(value=as.numeric(value))
+
+ggplot()+
+  geom_point(data=listing_panel2 %>%
+         filter(month ==1 & each_month_price <= 2500),aes(x = value, y = each_month_price), color = "#6f1b17", alpha = 0.26)+
+  geom_smooth(data=listing_panel2 %>%
+         filter(month ==1 & each_month_price <= 2500),aes(x = value, y = each_month_price), method = "lm", se= FALSE, color = "#ea483d")+
+  geom_point(data=listing_panel2 %>%
+         filter(month ==2& each_month_price <= 2500),aes(x = value, y = each_month_price), color = "#610f26", alpha = 0.26)+
+  geom_smooth(data=listing_panel2 %>%
+         filter(month ==2& each_month_price <= 2500),aes(x = value, y = each_month_price), method = "lm", se= FALSE, color = "#df2866")+
+  geom_point(data=listing_panel2 %>%
+         filter(month ==3& each_month_price <= 2500),aes(x = value, y = each_month_price), color = "#380f42", alpha = 0.26)+
+  geom_smooth(data=listing_panel2 %>%
+         filter(month ==3& each_month_price <= 2500),aes(x = value, y = each_month_price), method = "lm", se= FALSE, color = "#972aaf")+
+  geom_point(data=listing_panel2 %>%
+         filter(month ==4& each_month_price <= 2500),aes(x = value, y = each_month_price), color = "#261646", alpha = 0.26)+
+  geom_smooth(data=listing_panel2 %>%
+         filter(month ==4& each_month_price <= 2500),aes(x = value, y = each_month_price), method = "lm", se= FALSE, color = "#663bb6")+
+  geom_point(data=listing_panel2 %>%
+         filter(month ==5& each_month_price <= 2500),aes(x = value, y = each_month_price), color = "#191e46", alpha = 0.26)+
+  geom_smooth(data=listing_panel2 %>%
+         filter(month ==5& each_month_price <= 2500), aes(x = value, y = each_month_price), method = "lm", se= FALSE, color = "#4551b4")+
+  geom_point(data=listing_panel2 %>%
+         filter(month ==6& each_month_price <= 2500),aes(x = value, y = each_month_price), color = "#19387d", alpha = 0.26)+
+  geom_smooth(data=listing_panel2 %>%
+         filter(month ==6& each_month_price <= 2500),aes(x = value, y = each_month_price), method = "lm", se= FALSE, color = "#4295f2")+
+  geom_point(data=listing_panel2 %>%
+         filter(month ==7& each_month_price <= 2500),aes(x = value, y = each_month_price), color = "#173f7f", alpha = 0.26)+
+  geom_smooth(data=listing_panel2 %>%
+         filter(month ==7& each_month_price <= 2500),aes(x = value, y = each_month_price), method = "lm", se= FALSE, color = "#3ea8f3")+
+  geom_point(data=listing_panel2 %>%
+         filter(month ==8& each_month_price <= 2500),aes(x = value, y = each_month_price), color = "#184957", alpha = 0.26)+
+  geom_smooth(data=listing_panel2 %>%
+         filter(month ==8& each_month_price <= 2500),aes(x = value, y = each_month_price), method = "lm", se= FALSE, color = "#41bbd3")+
+  geom_point(data=listing_panel2 %>%
+         filter(month ==9& each_month_price <= 2500),aes(x = value, y = each_month_price), color = "#123832", alpha = 0.26)+
+  geom_smooth(data=listing_panel2 %>%
+         filter(month ==9& each_month_price <= 2500),aes(x = value, y = each_month_price), method = "lm", se= FALSE, color = "#309587")+
+  geom_point(data=listing_panel2 %>%
+         filter(month ==10& each_month_price <= 2500),aes(x = value, y = each_month_price), color = "#22421e", alpha = 0.26)+
+  geom_smooth(data=listing_panel2 %>%
+         filter(month ==10& each_month_price <= 2500),aes(x = value, y = each_month_price), method = "lm", se= FALSE, color = "#5aae51")+
+  geom_point(data=listing_panel2 %>%
+         filter(month ==11& each_month_price <= 2500),aes(x = value, y = each_month_price), color = "#364c1d", alpha = 0.26)+
+  geom_smooth(data=listing_panel2 %>%
+         filter(month ==11& each_month_price <= 2500),aes(x = value, y = each_month_price), method = "lm", se= FALSE, color = "#90c24c")+
+  geom_point(data=listing_panel2 %>%
+         filter(month ==12& each_month_price <= 2500),aes(x = value, y = each_month_price), color = "#535f18", alpha = 0.26)+
+  geom_smooth(data=listing_panel2 %>%
+         filter(month ==12& each_month_price <= 2500),aes(x = value, y = each_month_price), method = "lm", se= FALSE, color = "#cddc3f")+
+  facet_wrap(~variable, scales = "free")+
+  labs(title="Price as a function of numeric variable",
+       y="Mean Price each month",
+      caption = "Scatterplots of price and numeric variable")+
+  plotTheme()
+
+```
+
+We plot the relationship between average price each month and numeric features. The figure above shows that none of these features have linear relationship with price but price does have connections with some of these features such as the number of bedrooms, distance to metro and the number of reviews per month. There are 12 lines in each scatter plot. Each line represents correlation of a numeric feature to the average price in a month. It can seen that for each numeric feature, the variance of correlation is low, which means the average prices in each month have similar relationships with these numeric features.
+
+
+#### 4.5.2 Occupancy
+
+**Plot monthly-occupancy and numeric features **
+Each line represents the correlation of numeric feature and the average occupancy in a month. Occupancy is much more influenced by the tourism seasonality, the coefficient varied hugely among differnt months. 
+
+```{r scatterplot occupancy & numeric features, fig.width=20, fig.height=13.6, include=TRUE, echo=TRUE, warning= FALSE, message= FALSE}
+occupancy2 <- occupancy %>%
+  dplyr::rename(id = listing_id) 
+  
+occupancy2 <-  
+  left_join(occupancy2, st_drop_geometry(details.sf), by = "id") %>%
+  dplyr::select(id, month, monthly_occupancy, bathrooms, bedrooms, beds, review_scores_rating, reviews_per_month, dist.metro) %>%
+  gather(-id,-month, -monthly_occupancy, key = "variable", value = "value")%>%
+  mutate(value=as.numeric(value))
+
+ggplot()+
+  geom_point(data=occupancy2 %>%
+         filter(month ==1),aes(x = value, y = monthly_occupancy), color = "#6f1b17", alpha = 0.26)+
+  geom_smooth(data=occupancy2 %>%
+         filter(month ==1),aes(x = value, y = monthly_occupancy), method = "lm", se= FALSE, color = "#ea483d")+
+  geom_point(data=occupancy2 %>%
+         filter(month ==2),aes(x = value, y = monthly_occupancy), color = "#610f26", alpha = 0.26)+
+  geom_smooth(data=occupancy2 %>%
+         filter(month ==2),aes(x = value, y = monthly_occupancy), method = "lm", se= FALSE, color = "#df2866")+
+  geom_point(data=occupancy2 %>%
+         filter(month ==3),aes(x = value, y = monthly_occupancy), color = "#380f42", alpha = 0.26)+
+  geom_smooth(data=occupancy2 %>%
+         filter(month ==3),aes(x = value, y = monthly_occupancy), method = "lm", se= FALSE, color = "#972aaf")+
+  geom_point(data=occupancy2 %>%
+         filter(month ==4),aes(x = value, y = monthly_occupancy), color = "#261646", alpha = 0.26)+
+  geom_smooth(data=occupancy2 %>%
+         filter(month ==4),aes(x = value, y = monthly_occupancy), method = "lm", se= FALSE, color = "#663bb6")+
+  geom_point(data=occupancy2 %>%
+         filter(month ==5),aes(x = value, y = monthly_occupancy), color = "#191e46", alpha = 0.26)+
+  geom_smooth(data=occupancy2 %>%
+         filter(month ==5),aes(x = value, y = monthly_occupancy), method = "lm", se= FALSE, color = "#4551b4")+
+  geom_point(data=occupancy2 %>%
+         filter(month ==6),aes(x = value, y = monthly_occupancy), color = "#19387d", alpha = 0.26)+
+  geom_smooth(data=occupancy2 %>%
+         filter(month ==6),aes(x = value, y = monthly_occupancy), method = "lm", se= FALSE, color = "#4295f2")+
+  geom_point(data=occupancy2 %>%
+         filter(month ==7),aes(x = value, y = monthly_occupancy), color = "#173f7f", alpha = 0.26)+
+  geom_smooth(data=occupancy2 %>%
+         filter(month ==7),aes(x = value, y = monthly_occupancy), method = "lm", se= FALSE, color = "#3ea8f3")+
+  geom_point(data=occupancy2 %>%
+         filter(month ==8),aes(x = value, y = monthly_occupancy), color = "#184957", alpha = 0.26)+
+  geom_smooth(data=occupancy2 %>%
+         filter(month ==8),aes(x = value, y = monthly_occupancy), method = "lm", se= FALSE, color = "#41bbd3")+
+  geom_point(data=occupancy2 %>%
+         filter(month ==9),aes(x = value, y = monthly_occupancy), color = "#123832", alpha = 0.26)+
+  geom_smooth(data=occupancy2 %>%
+         filter(month ==9),aes(x = value, y = monthly_occupancy), method = "lm", se= FALSE, color = "#309587")+
+  geom_point(data=occupancy2 %>%
+         filter(month ==10),aes(x = value, y = monthly_occupancy), color = "#22421e", alpha = 0.26)+
+  geom_smooth(data=occupancy2 %>%
+         filter(month ==10),aes(x = value, y = monthly_occupancy), method = "lm", se= FALSE, color = "#5aae51")+
+  geom_point(data=occupancy2 %>%
+         filter(month ==11),aes(x = value, y = monthly_occupancy), color = "#364c1d", alpha = 0.26)+
+  geom_smooth(data=occupancy2 %>%
+         filter(month ==11),aes(x = value, y = monthly_occupancy), method = "lm", se= FALSE, color = "#90c24c")+
+  geom_point(data=occupancy2 %>%
+         filter(month ==12),aes(x = value, y = monthly_occupancy), color = "#535f18", alpha = 0.26)+
+  geom_smooth(data=occupancy2 %>%
+         filter(month ==12),aes(x = value, y = monthly_occupancy), method = "lm", se= FALSE, color = "#cddc3f")+
+  ylim(0,31)+
+  facet_wrap(~variable, scales = "free")+
+  labs(title="Occupancy as a function of numeric variable",
+       y="Mean Occupancy each month",
+      caption = "Figure 18. Scatterplots of occupancy and numeric variable")+
+  plotTheme()
+
+```
+
+We plot the relationship between average occupancy each month and numeric features. The figure above shows that none of these features have linear relationship with occupancy and occupancy barely has connections with these features. There are 12 lines in each scatter plot. Each line represents correlation of a numeric feature to the average occupancy in a month. It can seen that for each numeric feature, the variance of correlation is high, which means the average occupancies in each month have different relationships with these numeric features. This indicates that we should fit the model separately for each month.
+
+
+#### 4.5.3 correlation matrix
+
+By plotting the correlation between numeric features, it is obvious that basic features such as bed number and bedroom number are the determinant of price. Distance to public amenities are not as important as we expected. 
+
+We calculate the average price in a month for each listing.
+
+```{r occupancy join, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+occupancy3 <- occupancy %>%
+  dplyr::rename(id = listing_id) 
+  
+occupancy3 <-  
+  left_join(occupancy3, st_drop_geometry(details.sf), by = "id")
+```
+
+```{r price by month, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+listing_panel <- listing_panel%>%
+   dplyr::rename(id = listing_id)
+
+revenue_panel <- merge(occupancy3,listing_panel[c("id","month","each_month_price")],by=c("id","month")) %>%
+  mutate(revenue = each_month_price*monthly_occupancy)
+```
+
+```{r correlation matrix, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+annualrevenue <- revenue_panel %>%
+  group_by(id) %>%
+  summarise(annual_revenue = sum(revenue))
+
+
+annualrevenue<- left_join(details.sf, annualrevenue,by="id")%>%
+    filter(!id %in% no_price)%>%
+    mutate(bathrooms = as.numeric(bathrooms),
+         bedrooms = as.numeric(bedrooms))
+```
+
+```{r numeric correlation matrix, fig.width=6.4, fig.height=6.0, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+numericVars <- 
+  select_if(st_drop_geometry(annualrevenue), is.numeric) %>% na.omit() %>% 
+  dplyr::select(annual_revenue,price,beds, bedrooms, bathrooms, 
+                              minimum_nights,dist.museum,dist.supermarkets,
+                              dist.metro,dist.plaza, dist.nightclub,
+                              dist.beach, dist.parks,
+                              amenities.number)
+
+
+ggcorrplot(
+  round(cor(numericVars), 1), 
+  p.mat = cor_pmat(numericVars),
+  colors = c("#4757a2", "white", "#E46B45"),
+  type="lower",
+  insig = "blank") +  
+    labs(title = "Correlation across numeric variables") 
+```
+
+Overall, there is none multicollinearity in our regression expect for the connection between distance to museum and distance to parks.
+
+## 5. Modeling
+
+**Modeling approach**
+
+Our goal is to predict the annual revenue for a new listing in Amsterdam. Here are two approaches: First is to predict monthly price and occupancy separately and calculate the annual, which includes the following steps:     
+
+1. Create a price panel and an occupancy panel. Both of them list housings’ value (price/occupancy) in a long form.   
+2. Separate the dataset into training set and test set.     
+3. Fit regression on training set, trying on different groups of features.       
+4. Predict on test set.      
+5. Calculate the annual revenue for test set based on the predictions.        
+6. Calculate the absolute error and absolute percentage error.      
+
+Second is to predict annual revenue directly, which includes the following steps:
+
+1. Use the panel above to calculate annual revenue for each listing.       
+2. Separate the dataset into training set and test set.       
+3. Fit regression on training set, trying on different groups of features.       
+4. Predict on test set.       
+5. Calculate the absolute error and absolute percentage error.        
+
+
+The features we use are mainly hosts’ input and the houses’ exposure to amenities, attractions, etc. Though new listing has no previous price and we cannot add time lag, we take spatial effects into consideration, adding neighborhoods effect and spatial lag as features to improve both accuracy and generalizability.       
+
+We show both approaches in our report and compare their performances in prediction.       
+
+### 5.1 Predict Price & Occupancy
+
+#### 5.1.1 Calculate price spatial lag 
+
+To take spatial effect into consideration, we calculate the mean price of 5 nearest listings for each listing and name it lag price.
+
+```{r price spatial lag, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+revenue_panel <- merge(revenue_panel, details[c("id","longitude","latitude")], by=c("id"))
+
+revenue_panel.sf <- 
+  st_as_sf(revenue_panel,coords = c('longitude','latitude'),crs = 4326) %>% 
+  st_transform(st_crs(neighborhood))
+
+#Calculate for each month-------------------------------------------------------
+#January
+Jan_price <- revenue_panel.sf %>%
+  filter(month == 1)
+
+coords <- st_coordinates(Jan_price) 
+
+neighborList <- knn2nb(knearneigh(coords, 5))
+
+spatialWeights <- nb2listw(neighborList, style="W")
+
+Jan_price$lagPrice <- lag.listw(spatialWeights, Jan_price$each_month_price)
+
+
+#February
+Feb_price <- revenue_panel.sf %>%
+  filter(month == 2)
+
+coords <- st_coordinates(Feb_price) 
+
+neighborList <- knn2nb(knearneigh(coords, 5))
+
+spatialWeights <- nb2listw(neighborList, style="W")
+
+Feb_price$lagPrice <- lag.listw(spatialWeights, Feb_price$each_month_price)
+
+
+#March
+Mar_price <- revenue_panel.sf %>%
+  filter(month == 3)
+
+coords <- st_coordinates(Mar_price) 
+
+neighborList <- knn2nb(knearneigh(coords, 5))
+
+spatialWeights <- nb2listw(neighborList, style="W")
+
+Mar_price$lagPrice <- lag.listw(spatialWeights, Mar_price$each_month_price)
+
+
+#April
+Apr_price <- revenue_panel.sf %>%
+  filter(month == 4)
+
+coords <- st_coordinates(Apr_price) 
+
+neighborList <- knn2nb(knearneigh(coords, 5))
+
+spatialWeights <- nb2listw(neighborList, style="W")
+
+Apr_price$lagPrice <- lag.listw(spatialWeights, Apr_price$each_month_price)
+
+
+#May
+May_price <- revenue_panel.sf %>%
+  filter(month == 5)
+
+coords <- st_coordinates(May_price) 
+
+neighborList <- knn2nb(knearneigh(coords, 5))
+
+spatialWeights <- nb2listw(neighborList, style="W")
+
+May_price$lagPrice <- lag.listw(spatialWeights, May_price$each_month_price)
+
+
+#June
+Jun_price <- revenue_panel.sf %>%
+  filter(month == 6)
+
+coords <- st_coordinates(Jun_price) 
+
+neighborList <- knn2nb(knearneigh(coords, 5))
+
+spatialWeights <- nb2listw(neighborList, style="W")
+
+Jun_price$lagPrice <- lag.listw(spatialWeights, Jun_price$each_month_price)
+
+
+#Jul
+Jul_price <- revenue_panel.sf %>%
+  filter(month == 7)
+
+coords <- st_coordinates(Jul_price) 
+
+neighborList <- knn2nb(knearneigh(coords, 5))
+
+spatialWeights <- nb2listw(neighborList, style="W")
+
+Jul_price$lagPrice <- lag.listw(spatialWeights, Jul_price$each_month_price)
+
+
+#August
+Aug_price <- revenue_panel.sf %>%
+  filter(month == 8)
+
+coords <- st_coordinates(Aug_price) 
+
+neighborList <- knn2nb(knearneigh(coords, 5))
+
+spatialWeights <- nb2listw(neighborList, style="W")
+
+Aug_price$lagPrice <- lag.listw(spatialWeights, Aug_price$each_month_price)
+
+
+#September
+Sep_price <- revenue_panel.sf %>%
+  filter(month == 9)
+
+coords <- st_coordinates(Sep_price) 
+
+neighborList <- knn2nb(knearneigh(coords, 5))
+
+spatialWeights <- nb2listw(neighborList, style="W")
+
+Sep_price$lagPrice <- lag.listw(spatialWeights, Sep_price$each_month_price)
+
+
+#October
+Oct_price <- revenue_panel.sf %>%
+  filter(month == 10)
+
+coords <- st_coordinates(Oct_price) 
+
+neighborList <- knn2nb(knearneigh(coords, 5))
+
+spatialWeights <- nb2listw(neighborList, style="W")
+
+Oct_price$lagPrice <- lag.listw(spatialWeights, Oct_price$each_month_price)
+
+
+#November
+Nov_price <- revenue_panel.sf %>%
+  filter(month == 11)
+
+coords <- st_coordinates(Nov_price) 
+
+neighborList <- knn2nb(knearneigh(coords, 5))
+
+spatialWeights <- nb2listw(neighborList, style="W")
+
+Nov_price$lagPrice <- lag.listw(spatialWeights, Nov_price$each_month_price)
+
+
+#December
+Dec_price <- revenue_panel.sf %>%
+  filter(month == 12)
+
+coords <- st_coordinates(Dec_price) 
+
+neighborList <- knn2nb(knearneigh(coords, 5))
+
+spatialWeights <- nb2listw(neighborList, style="W")
+
+Dec_price$lagPrice <- lag.listw(spatialWeights, Dec_price$each_month_price)
+
+#----------------------------------------------------------------------
+price_panel_lag <- rbind(Jan_price, Feb_price, Mar_price, Apr_price, May_price, Jun_price, Jul_price, Aug_price, Sep_price, Oct_price, Nov_price, Dec_price)
+
+```
+
+
+```{r price & price lag, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+ggplot(price_panel_lag )+
+  geom_point(aes(x = lagPrice, y = each_month_price), alpha = 0.26)+
+  geom_smooth(aes(x = lagPrice, y =each_month_price), method = "lm", se= FALSE, color = "orange")+
+  labs(title="Price as a function of lagPrice",
+      caption = "Figure xx. Scatterplots of Price and lagPrice")+
+  plotTheme()
+```
+From the figure above, we know that though price has correlation with lag price, their correlation is not that strong. Obviously, some listings with high prices are surrounded by houses with much lower prices. For these listings (both high-price and low-price), lag price might be a misleading predictor. If we ignore these data, we will find that most listings' prices are similar to the nearby.
+
+#### 5.1.2 Price Regression
+
+
+```{r price regression, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+
+set.seed(1234)
+
+month.var <- c(1:12)
+
+Price.monthList <- list()
+ams.train <- list()
+ams.test <- list()
+ams.test.prediction <- list()
+ams.test.table <- list()
+
+price_panel_lag <- merge(price_panel_lag,listing.sf.neighbor2[c("id", "Buurt")], by = "id")
+
+Jan_price <- st_drop_geometry(price_panel_lag)%>%
+  filter(month == 1)
+
+inTrain <- createDataPartition(
+              y = paste(Jan_price$pool,Jan_price$Buurt,Jan_price$property_type,
+                        Jan_price$host_is_superhost), 
+              p = .60, list = FALSE)
+
+for (i in month.var){
+Price.monthList[[i]] <- 
+  st_drop_geometry(price_panel_lag) %>% 
+  filter(month == i) 
+
+ams.train[[i]] <- Price.monthList[[i]][inTrain,] 
+ams.test[[i]]  <- Price.monthList[[i]][-inTrain,]
+
+reg.price <- lm(each_month_price ~ ., 
+                data = ams.train[[i]] %>% 
+                dplyr::select(each_month_price, beds, bedrooms, bathrooms, accommodates,
+                              pool, parking, kitchen, AC, fireplace,
+                              Buurt,host_is_superhost,
+                              room_type,property_type,bed_type,
+                              minimum_nights,dist.museum,dist.supermarkets,
+                              Unesco,dist.metro,dist.plaza, dist.nightclub,
+                              dist.beach, dist.parks,
+                              name.bright, name.spacious,name.luxury,
+                              amenities.number,lagPrice))
+
+
+
+ams.test.prediction[[i]] <-
+  ams.test[[i]] %>%
+  mutate(price.Predict =  predict(reg.price, ams.test[[i]]),
+         price.AbsError = abs(each_month_price - price.Predict))
+
+if(i ==1){
+    ams.test.table.all <- ams.test.prediction[[i]]
+    }else{
+      ams.test.table[[i]] <- ams.test.prediction[[i]]
+      ams.test.table.all <- rbind(ams.test.table.all,ams.test.table[[i]])
+    }
+      
+}
+
+```
+
+```{r price reg summary, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+stargazer(reg.price, type = "text" ,single.row = FALSE, digits = 3,no.space = FALSE)
+```
+R Sqaure for this algorithm is lower than 0.5, which means that the regression fails to predict more than half of the listings' prices in Amsterdam. In terms of accuracy, the algorithm doesn't perform well enough.
+
+```{r AE&APE,  include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+ams.test.price.table <- ams.test.table.all %>%
+  dplyr::select(id, month, price.Predict, each_month_price, Buurt) %>%
+  mutate(AE = abs(each_month_price-price.Predict),
+         APE = abs(each_month_price-price.Predict)/each_month_price)
+```
+
+
+```{r Plot APE,  include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+ggplot(ams.test.price.table, aes(x=APE)) + 
+  labs(title = "APE Distribution",caption = "Figure XX. A histogram of APE") +
+  geom_histogram()+
+  plotTheme()
+```
+
+
+
+```{r plot APE no outliers, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+ggplot(ams.test.price.table%>%
+         filter(APE<1.5), aes(x=APE)) + 
+  labs(title = "APE Distribution",caption = "Figure XX. A histogram of APE") +
+  geom_histogram()+
+  plotTheme()
+```
+
+The absolute percentage errors of price for test set have a positively skewed distribution. Most APEs are close to 0.15 and less than 7% of the APEs are higher than 1.5. Those APEs higher 10 might be caused by outliers, whose prices are usually extremely high or low.
+
+
+- MAE and MAPE by month
+```{r MAE&MAPE by month,  include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+ams.test.table.all %>% 
+  drop_na(price.AbsError)%>%
+  group_by(month)%>%
+  summarise(MAE=mean(price.AbsError),
+            MAPE = mean(price.AbsError/each_month_price))%>%
+  kable() %>% kable_styling()
+```
+
+```{r MAPE by month,  include=TRUE, echo = TRUE, message = FALSE, warning = FALSE }
+ams.test.table.all %>% 
+    drop_na(price.AbsError)%>%
+  group_by(month)%>%
+  summarise(MAE=mean(price.AbsError),
+            MAPE = mean(price.AbsError/each_month_price))%>%
+ggplot(aes(month,MAPE)) + 
+      geom_line(size = 1.1,colour = "#4757a2") + 
+      labs(title = "MAPE by Month", 
+           subtitle = "Amsterdam Airbnb price by month prediction",  
+           x = "Month", y= "MAPE") +
+      plotTheme()
+```
+
+Figure above shows that our algorithm is not that generalizable in time. The prediction for test set has highest error in December and lowest error in November. The prediction is neither accurate enough, as most MAPEs are higher than 48%.
+
+
+- MAE and MAPE by Buurt (April)
+
+```{r  group by Buurt, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+ams.test.prediction[[4]]%>%
+  group_by(Buurt) %>%
+  summarize(mean.MAPE = mean(price.AbsError/each_month_price, na.rm = T),
+            mean.MAE = mean(price.AbsError, na.rm = T)) %>% kable() %>% kable_styling()
+```
+
+```{r MAE MAPE by Buurt, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+ams.test.prediction[[4]]%>%
+  group_by(Buurt) %>%
+  summarize(mean.MAPE = mean(price.AbsError/each_month_price, na.rm = T),
+            mean.MAE = mean(price.AbsError, na.rm = T)) %>%
+  ungroup() %>% 
+  left_join(neighbor2,by = "Buurt") %>%
+    st_sf() %>%
+    ggplot() + 
+      geom_sf(aes(fill = mean.MAPE),colour = 'transparent') +
+      scale_fill_gradient(low = palette5[1], high = palette5[5],
+                          name = "MAPE") +
+      labs(title = "Mean test set MAPE by Buurt",
+           subtitle = "April, 2018") +
+      mapTheme
+```
+Figure and table above shows that our model is generalizable across space. Its performance in accuracy is not that good as generalizability. That's probably because we take many spatial features into consideration but miss some key points like time effect due to lack of data.
+
+#### 5.1.3 Occupancy Regression
+
+```{r occupancy regression, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+occupancy3 <- merge(occupancy3, listing.sf.neighbor2[c("id", "Buurt")], by = "id")
+
+set.seed(5164)
+
+month.var <- c(1:12)
+
+Occupancy.monthList <- list()
+ams.train <- list()
+ams.test <- list()
+ams.test.prediction <- list()
+ams.test.table <- list()
+
+Jan_occupancy <- st_drop_geometry(price_panel_lag)%>%
+  filter(month == 1)%>%
+  mutate(bathrooms = as.numeric(bathrooms),
+         bedrooms = as.numeric(bedrooms))
+
+inTrain <- createDataPartition(
+              y = paste(Jan_occupancy$pool,Jan_occupancy$Buurt,Jan_occupancy$property_type,
+                        Jan_occupancy$host_is_superhost), 
+              p = .60, list = FALSE)
+
+for (i in month.var){
+Occupancy.monthList[[i]] <- 
+  st_drop_geometry(price_panel_lag) %>% 
+  mutate(bathrooms = as.numeric(bathrooms),
+         bedrooms = as.numeric(bedrooms) )%>%
+  filter(month == i) 
+
+ams.train[[i]] <- Occupancy.monthList[[i]][inTrain,] 
+ams.test[[i]]  <- Occupancy.monthList[[i]][-inTrain,]
+
+reg.occupancy <- lm(monthly_occupancy ~ ., 
+                data = ams.train[[i]] %>% 
+                dplyr::select(monthly_occupancy, beds, bedrooms, bathrooms, accommodates,
+                              pool, parking, kitchen, AC, fireplace,
+                              Buurt,host_is_superhost,
+                              room_type,property_type,bed_type,
+                              minimum_nights,dist.museum,dist.supermarkets,
+                              Unesco,dist.metro,dist.plaza, dist.nightclub,
+                              dist.beach, dist.parks,
+                              name.bright, name.spacious,name.luxury,
+                              amenities.number))
+
+ams.test.prediction[[i]] <-
+  ams.test[[i]] %>%
+  mutate(occupancy.Predict =  predict(reg.occupancy, ams.test[[i]]),
+         occupancy.AbsError = abs(monthly_occupancy - occupancy.Predict))
+
+if(i ==1){
+    ams.test.table.all <- ams.test.prediction[[i]]
+    }else{
+      ams.test.table[[i]] <- ams.test.prediction[[i]]
+      ams.test.table.all <- rbind(ams.test.table.all,ams.test.table[[i]])
+    }
+      
+}
+
+```
+
+
+```{r calculate AE& APE, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE }
+ams.test.occupancy.table <- ams.test.table.all %>%
+  dplyr::select(id, month, occupancy.Predict, monthly_occupancy, Buurt) %>%
+  mutate(AE = abs(monthly_occupancy-occupancy.Predict),
+         APE = abs(monthly_occupancy-occupancy.Predict)/monthly_occupancy)
+```
+
+
+```{r plot APE occupancy, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+ggplot(ams.test.occupancy.table, aes(x=APE)) + 
+  labs(title = "APE Distribution",caption = "Figure XX. A histogram of APE") +
+  geom_histogram()+
+  plotTheme()
+```
+
+
+```{r plot APE occupancy2, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+ggplot(ams.test.occupancy.table %>%
+        filter(APE<1.5),
+         aes(x=APE)) + 
+  labs(title = "APE Distribution",caption = "Figure XX. A histogram of APE") +
+  geom_histogram()+
+  plotTheme()
+```
+
+The absolute percentage errors of occupancy for test set have a positively skewed distribution. Most APEs are close to 0.15 and less than 6% of tje APEs are higher than 1.5. Those APEs higher 10 might be caused by outliers, whose occupancy are usually low (e.g. 0 per month).
+
+#### 5.1.4 Calculate anuual revenue
+
+```{r calculate annual revenue,include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+ams.test.revenue.table <-
+  merge(ams.test.occupancy.table[c("id","month","occupancy.Predict","monthly_occupancy","Buurt")],
+        ams.test.price.table[c("id","month","price.Predict","each_month_price")],by=c("id","month")) %>%
+  mutate(revenue = monthly_occupancy * each_month_price,
+         predictRevenue = occupancy.Predict*price.Predict) %>%
+  group_by(id, Buurt)%>%
+  summarise(annualRevenue = sum(revenue),
+            predictAnnualRev = sum(predictRevenue))%>%
+  mutate(AE= abs(annualRevenue-predictAnnualRev),
+         APE = abs(annualRevenue-predictAnnualRev)/annualRevenue)
+
+
+ggplot(ams.test.revenue.table,
+         aes(x=APE)) + 
+  labs(title = "APE Distribution",caption = "Figure XX. A histogram of APE") +
+  geom_histogram()+
+  plotTheme()
+
+
+ggplot(ams.test.revenue.table %>%
+        filter(APE<1.5),
+         aes(x=APE)) + 
+  labs(title = "APE Distribution",caption = "Figure XX. A histogram of APE") +
+  geom_histogram()+
+  plotTheme()
+```
+
+Most annual revenues predicted by our first approach have an APE close to 0.15, which is a sign to accurate prediction. However, there are still some predicted revenues that have APE higher than 1, which may cause problems in our use case.
+
+- plot error by neighborhood2
+```{r plot error by neighborhood2, plot APE occupancy, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+ams.test.revenue.table%>%
+  filter(APE<1.5)%>%
+  group_by(Buurt) %>%
+  summarize(mean.APE = mean(APE, na.rm = T)) %>%
+  ungroup() %>% 
+  left_join(neighbor2,by = "Buurt") %>%
+    st_sf() %>%
+    ggplot() + 
+      geom_sf(aes(fill = mean.APE),colour = 'transparent') +
+      scale_fill_gradient(low = palette5[1], high = palette5[5],
+                          name = "MAPE") +
+      labs(title = "Mean test set MAPE by Buurt",
+           subtitle = "2019") +
+      mapTheme
+```
+
+High MAPE of prediction exists at the outskirt of Amsterdam. Far away from the city center, those listing at the outskirt are seldom occupied by renter, since population density is usually lower at the outskirt. The following analysis also proves our speculation, indicating that the listings with high MAPEs are mainly vacant throughout the year and thus have little revenue.
+
+```{r plot occupancy by buurt, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+revenue_panel%>%
+  group_by(Buurt) %>%
+  summarize(occupancy = mean(monthly_occupancy, na.rm = T)) %>%
+  ungroup() %>% 
+  left_join(neighbor2,by = "Buurt") %>%
+    st_sf() %>%
+    ggplot() + 
+      geom_sf(aes(fill = occupancy),colour = 'transparent') +
+      scale_fill_gradient(low = palette5[1], high = palette5[5],
+                          name = "occupancy") +
+      labs(title = "Occupancy by Buurt",
+           subtitle = "2019") +
+      mapTheme
+```
+Those areas with low occupancy are almost the same as those with high MAPE.
+
+
+### 5.2 Predict Annual Revenue
+
+#### 5.2.1 Revenue
+
+```{r calculate annual revenue , include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+annualrevenue <- revenue_panel %>%
+  group_by(id) %>%
+  summarise(annual_revenue = sum(revenue))
+
+annualrevenue<- left_join(details.sf, annualrevenue,by="id")%>%
+    filter(!id %in% no_price)
+```
+
+#### 5.2.2 Annual Revenue Spatial Lag
+```{r annual revenue spatial lag, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+annualrevenue<- annualrevenue %>%
+  drop_na(annual_revenue)
+
+coords <- st_coordinates(annualrevenue) 
+
+neighborList <- knn2nb(knearneigh(coords, 5))
+
+spatialWeights <- nb2listw(neighborList, style="W")
+
+
+
+annualrevenue$lagRevenue <- lag.listw(spatialWeights, annualrevenue$annual_revenue)
+
+```
+
+```{r annual revenue & spatial lag plot, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+ggplot(annualrevenue)+
+  geom_point(aes(x = lagRevenue, y = annual_revenue), alpha = 0.26)+
+  geom_smooth(aes(x = lagRevenue, y =annual_revenue), method = "lm", se= FALSE, color = "orange")+
+  labs(title="Revenue as a function of lagRevenue",
+      caption = "Figure xx. Scatterplots of revenue and lagRevenue")+
+  plotTheme()
+```
+
+From the figure above, we know that though the annual revenue has correlation with lag annual revenue, their correlation is not that strong. Obviously, some listings with high annual revenues are surrounded by houses with much lower annual revenue. For these listings, lag annual revenue might be a misleading predictor. If we ignore these data, we will find that most listings' annual revenues are similar to the nearby.
+
+
+#### 5.2.2 Anuual revenue regression
+
+```{r annual revenue regression, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+annualrevenue <- merge(annualrevenue,listing.sf.neighbor2[c("id", "Buurt")], by = "id")
+
+#Split training and test set
+set.seed(31497)
+
+inTrain <- caret::createDataPartition(
+  y = st_drop_geometry(annualrevenue)$annual_revenue, 
+  p = .6, list = FALSE)
+
+annualrevenue.training <- st_drop_geometry(annualrevenue)[inTrain,]
+annualrevenue.test     <- st_drop_geometry(annualrevenue)[-inTrain,]
+
+
+reg.annualrevenue <- lm(annual_revenue ~ ., data = st_drop_geometry(annualrevenue) %>% 
+             dplyr::select(annual_revenue,beds, bedrooms, bathrooms, accommodates,
+                              pool, parking, kitchen, AC, fireplace,
+                              Buurt,host_is_superhost,
+                              room_type,property_type,bed_type,
+                              minimum_nights,dist.museum,dist.supermarkets,
+                              Unesco,dist.metro,dist.plaza, dist.nightclub,
+                              dist.beach, dist.parks,
+                              name.bright, name.spacious,name.luxury,
+                              amenities.number,lagRevenue)
+) 
+
+annualrev_predict_test <- annualrevenue.test %>%
+  mutate(Prediction = predict(reg.annualrevenue, newdata = annualrevenue.test)) %>%
+  mutate(Prediction = ifelse(Prediction > 0, Prediction, mean(annualrevenue.training$annual_revenue)))%>%
+  filter(annual_revenue!=0)%>%
+  drop_na(Prediction)%>%
+  mutate(AE = abs(Prediction-annual_revenue),
+         APE = AE/Prediction)
+
+test_result <- data.frame(MAE = c(mean(annualrev_predict_test$AE, na.rm=T)),
+              MAPE = c(scales::percent(mean(annualrev_predict_test$APE, na.rm=T)))) 
+
+test_result %>%
+  kable(caption = "Figure 8. Mean absolute error and MAPE for a single test set")%>%
+  kable_styling("striped", full_width = F)
+```
+
+```{r annual revenue regression summ, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+stargazer(reg.annualrevenue,
+          type = "text",
+          title ="Regression Output",
+          single.row = TRUE,
+          out.header = TRUE)
+
+```
+
+```{r annual revenue regression plot, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+ggplot(annualrev_predict_test,
+         aes(x=APE)) + 
+  labs(title = "APE Distribution",caption = "Figure XX. A histogram of APE") +
+  geom_histogram()+
+  plotTheme()
+
+
+ggplot(annualrev_predict_test %>%
+        filter(APE<1.5),
+         aes(x=APE)) + 
+  labs(title = "APE Distribution",caption = "Figure XX. A histogram of APE") +
+  geom_histogram()+
+  plotTheme()
+```
+
+
+- plot error by neighborhood2
+```{r  annual revenue regression plot by Buurt, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+ams.test.table.anual%>%
+  filter(APE<1.5)%>%
+  group_by(Buurt) %>%
+  summarize(mean.APE = mean(APE, na.rm = T)) %>%
+  ungroup() %>% 
+  left_join(neighbor2,by = "Buurt") %>%
+    st_sf() %>%
+    ggplot() + 
+      geom_sf(aes(fill = mean.APE),colour = 'transparent') +
+      scale_fill_gradient(low = palette5[1], high = palette5[5],
+                          name = "MAPE") +
+      labs(title = "Mean test set MAPE by Buurt",
+           subtitle = "2019") +
+      mapTheme
+```
+Compared to approach 1, this approach is more generalizable across space. There are fewer places with high MAPEs of prediction and those listings with high MAPE are also dispersed at the outskirt.
+
+
+###5.3 Cross Validation (for annual revenue prediction only)
+
+k-folds cross validation 
+
+compare the baseline regression to see how much we improved the model
+
+
+####5.3.1 normal cv
+
+```{r normal cv,include=TRUE, echo = TRUE, message = FALSE, warning = FALSE }
+#calculate annual revenue and join it back to detais.sf
+annualrevenue.raw <- revenue_panel %>% 
+  group_by(id) %>% 
+  summarise(annual_revenue = sum(revenue)) %>% 
+  dplyr::select(id, annual_revenue)
+
+annualrevenue <- left_join(details.sf,annualrevenue.raw,by = "id")
+annualrevenue <- merge(annualrevenue, listing.sf.neighbor2[c("id", "Buurt")], by = "id")
+
+annualrevenue$Buurt <- tidyr::replace_na(annualrevenue$Buurt, "NA")
+
+```
+
+
+```{r CV regression, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+# use caret package cross-validation method
+fitControl <- trainControl(method = "cv", 
+                           number = 20,
+                           # savePredictions differs from book
+                           savePredictions = TRUE)
+
+set.seed(856)
+
+# for k-folds CV
+
+#Run Regression using K fold CV
+
+# annual revenue
+reg.cv.revenue <- 
+  train(annual_revenue ~ ., data = st_drop_geometry(annualrevenue) %>% 
+    dplyr::select(annual_revenue,beds, bedrooms, bathrooms, accommodates,
+                              pool, parking, kitchen, AC, fireplace,
+                              Buurt,host_is_superhost,
+                              room_type,property_type,bed_type,
+                              minimum_nights,dist.museum,dist.supermarkets,
+                              Unesco,dist.metro,dist.plaza, dist.nightclub,
+                              dist.beach, dist.parks,
+                              name.bright, name.spacious,name.luxury,
+                              amenities.number
+                  )%>%
+      na.omit(), 
+     method = "lm", 
+     trControl = fitControl, 
+     na.action = na.pass,)
+
+revenue.cv.MAE <- reg.cv.revenue$results$MAE
+revenue.cv.MAESD <- reg.cv.revenue$results$MAESD
+
+revenue.cvtable <- matrix(ncol = 2, c(revenue.cv.MAE, revenue.cv.MAESD), byrow = F)
+rownames(revenue.cvtable) <- "Value"
+colnames(revenue.cvtable) <- c("MAE", "MAESD")
+
+revenue.cvtable %>% 
+  kable(caption = "Table of MAE & MAESD for k-fold cross-validation (annual revenue)") %>%
+  kable_styling("striped", full_width = F)
+
+reg.cv.revenue.base <- 
+  train(annual_revenue ~ ., data = st_drop_geometry(annualrevenue) %>% 
+    dplyr::select(annual_revenue,beds, bedrooms, bathrooms, accommodates)%>%
+      na.omit(), 
+     method = "lm", 
+     trControl = fitControl, 
+     na.action = na.pass)
+
+revenue.cv.MAE <- reg.cv.revenue.base$results$MAE
+revenue.cv.MAESD <- reg.cv.revenue.base$results$MAESD
+
+revenue.cvtable <- matrix(ncol = 2, c(revenue.cv.MAE, revenue.cv.MAESD), byrow = F)
+rownames(revenue.cvtable) <- "Value"
+colnames(revenue.cvtable) <- c("MAE", "MAESD")
+
+revenue.cvtable %>% 
+  kable(caption = "Table of MAE & MAESD for k-fold cross-validation (annual revenue. base)") %>%
+  kable_styling("striped", full_width = F)
+
+```
+Adding new features helps us lower MAE when predicting annual revenues, but it also increases MAESD as well.
+
+```{r price K-fold CV, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+# price
+reg.cv.price <- 
+  train(price ~ ., data = st_drop_geometry(annualrevenue) %>% 
+    dplyr::select(price,beds, bedrooms, bathrooms, accommodates,
+                              pool, parking, kitchen, AC, fireplace,
+                              Buurt,host_is_superhost,
+                              room_type,property_type,bed_type,
+                              minimum_nights,dist.museum,dist.supermarkets,
+                              Unesco,dist.metro,dist.plaza, dist.nightclub,
+                              dist.beach, dist.parks,
+                              name.bright, name.spacious,name.luxury,
+                              amenities.number
+                  )%>%
+      na.omit(), 
+     method = "lm", 
+     trControl = fitControl, 
+     na.action = na.pass)
+
+price.cv.MAE <- reg.cv.price$results$MAE
+price.cv.MAESD <- reg.cv.price$results$MAESD
+
+price.cvtable <- matrix(ncol = 2, c(price.cv.MAE, price.cv.MAESD), byrow = F)
+rownames(price.cvtable) <- "Value"
+colnames(price.cvtable) <- c("MAE", "MAESD")
+
+price.cvtable %>% 
+  kable(caption = "Table of MAE & MAESD for k-fold cross-validation (price)") %>%
+  kable_styling("striped", full_width = F)
+
+reg.cv.price.base <- 
+  train(price ~ ., data = st_drop_geometry(annualrevenue) %>% 
+    dplyr::select(price,beds, bedrooms, bathrooms, accommodates), 
+     method = "lm", 
+     trControl = fitControl, 
+     na.action = na.pass)
+
+
+price.cv.MAE <- reg.cv.price.base$results$MAE
+price.cv.MAESD <- reg.cv.price.base$results$MAESD
+
+price.cvtable <- matrix(ncol = 2, c(price.cv.MAE, price.cv.MAESD), byrow = F)
+rownames(price.cvtable) <- "Value"
+colnames(price.cvtable) <- c("MAE", "MAESD")
+
+price.cvtable %>% 
+  kable(caption = "Table of MAE & MAESD for k-fold cross-validation (price.base)") %>%
+  kable_styling("striped", full_width = F)
+```
+
+Adding new features helps us decrease both MAE and MAESD when predicting prices. 
+
+```{r CV Plot, fig.width=16, fig.height=10.8, include=TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+reg.cv.revenue.resample <- reg.cv.revenue$resample
+reg.cv.revenue.base.resample <- reg.cv.revenue.base$resample
+reg.cv.price.resample <- reg.cv.price$resample
+reg.cv.price.base.resample <- reg.cv.price.base$resample
+
+
+var_list <- list()
+
+var_list[[1]] <- ggplot(reg.cv.revenue.resample, aes(x=MAE)) + geom_histogram(color = "grey30", fill = "#4757A2", bins = 50) + 
+  ylim(0,4)+xlim(22000,30000)+
+  labs(title="Histogram of Mean Average Error Across 20 Folds, Revenue") +
+  plotTheme()
+
+var_list[[2]] <- ggplot(reg.cv.revenue.base.resample, aes(x=MAE)) + geom_histogram(color = "grey30", fill = "#4757A2", bins = 50) + 
+  ylim(0,4)+xlim(22000,30000)+
+  labs(title="Histogram of Mean Average Error Across 20 Folds, Revenue Baseline") +
+  plotTheme()
+
+var_list[[3]] <- ggplot(reg.cv.price.resample, aes(x=MAE)) + geom_histogram(color = "grey30", fill = "#4757A2", bins = 50) + 
+  ylim(0,4)+xlim(37,56)+
+  labs(title="Histogram of Mean Average Error Across 20 Folds, Price") +
+  plotTheme()
+
+var_list[[4]] <- ggplot(reg.cv.price.base.resample, aes(x=MAE)) + geom_histogram(color = "grey30", fill = "#4757A2", bins = 50) + 
+  ylim(0,4)+xlim(37,56)+
+  labs(title="Histogram of Mean Average Error Across 20 Folds, Price Baseline") +
+  plotTheme()
+
+do.call(grid.arrange,c(var_list, ncol = 2, top = "Histogram of MAEs"))
+
+```
+Histograms above also prove our conclusions. New regressions (with new features) perform better than baseline as the distributions of MAE move towards lower (left).
+
+## 6.Discussion
+
+### 6.1 How dose our analysis meet the use case we set out to address?
+
+The goal of the algorithm is to predict the direct economic income that can be brought back to the community by a new Airbnb lisiting. We also want to inform the residents about the changing occupancy rate along time, letting them know when the visitors will be staying in the neighborhood. Generally speaking, our algorithm succeeded in predicting the revenue with acceptable error around 38%, and the errors mainly happen on the fringe of Amsterdam, where Airbnb density is lower and outlier concentrate. But we're not predicting the occupancy rate very well, probably because of more subjective data such as rating and comments are not included. 
+
+### 6.2 How to improve the model?
+
+Overall, our algorithm doesn't perform well enough in accuracy and our prediction on prices is better than occupancy and revenue. That's mainly because occupancy is hard to predict without previous data (time lag). To predict occupancy, what people can do is to predict the occupancy in next week or next month based on the occupancy this week and continue doing it for a year. This approach seems better than ours because occupancy is strongly related to time, not only space. However, this approach makes no sense in our use case as we have to predict the annual for a new listing. We can neither obtain its previous occupancy, nor predict it month by month. In order to improve our algorithm while ensure it can work in our use case, we suggest trying on the following approaches:   
+
+-   Clean the data
+
+There are quite a few outliers in the data set. Some listings have extremely high prices in certain months with zero occupancy. We excluded some of the outliers but not all of them, they account for some extremely large errors. To further improve our model, we will try to find the commonality of these outliers and get rid of them.
+
+-   Include more features
+
+As we mentioned before, occupancy is more volatile than price, and depends less on physical features. Also, price itself can also be influencing the occupancy. Because we didn't find crime and population data at smaller geography, we didn't test the generalizablity among different socio-econimic context, which are also likely to influence price and occupancy.
+
+-   Use other regressions
+
+During our research, the relationship between some features and the dependent variable is not linear. We tried to use logarithm or reciprocal to convert the variables but didn't make much progress. From the cases of Airbnb predictions that we researched on, there are some other regression that performs better then OLS, suchs as `XGBoost` and `Random Forest`. Maybe by using these regressions, we can also improve our predictions.
+
+
+
+******
+## Bibliography
+amsterdam attractions | http://tour-pedia.org/about/datasets.html
